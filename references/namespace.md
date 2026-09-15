@@ -1,0 +1,113 @@
+# The compiled namespace: derivation, footprint, hashes, guard, recompile branches
+
+> **Verified as of 2026-09-15**, on one design-system project push. Re-verify the derivation rule with one read: `get_file _ds_manifest.json` on any design-system project you can see and compare `.namespace` with the project's display name and id. Re-verify the hash scheme by recomputing `sha256(file)[:12]` for several `sourceHashes` entries, not one.
+
+## What it is
+
+A compiled Claude Design bundle (`_ds_bundle.js`, header `/* @ds-bundle: {…} */`, `"format": 4` at the time of observation) exposes the whole component library through **one global**:
+
+```js
+const __ds_ns = (window.<Namespace> = window.<Namespace> || {});
+```
+
+`_ds_manifest.json` carries the same value in its `"namespace"` field. Pages built against the system read that global directly and unguarded:
+
+```js
+const NS = window.<Namespace>;
+const { Shell, PageHeader, Well } = NS;   // TypeError if NS is undefined
+```
+
+Move, duplicate or rename the project and the platform derives a **different** namespace; the global the pages expect no longer exists; every page throws while destructuring and renders nothing. The console shows a TypeError only if you know to look — the visible symptom is a blank screen.
+
+## Derivation rule (empirical)
+
+```
+<display name with non-alphanumeric characters removed>_<first 6 hex characters of the projectId>
+```
+
+Example (fictional): project **"Acme Design System"**, id `1a2b3c9f-…` → `AcmeDesignSystem_1a2b3c`. Renamed to **"Design System"** and re-created under id `9f8e7d61-…` → `DesignSystem_9f8e7d`.
+
+Evidence: one confirmed pair (a project's manifest read back through `get_file` matched its name and id exactly; the chance of an accidental 6-hex match is ≈ 6 × 10⁻⁸), plus one consistent pair (a tree whose namespace stem matched the name of the project it was downloaded from across seven dated snapshots spanning weeks while the content changed completely — so the value is project-bound, not content-derived).
+
+**Open questions, stated plainly:**
+- The stem is confirmed for **Title Case words separated by spaces** only. Lowercase-first words, digits, punctuation and non-Latin characters are untested.
+- Whether the stem uses the name **at compile time or at creation** could not be distinguished from two data points. If a project was renamed after creation, the stem may follow either. The guard (below) resolves this on the first page load either way, by printing what is actually present.
+
+## Where the literal lives — enumerate, do not assume
+
+Grep for the bare literal across the tree (excluding `.git`, your audit directory and any multi-megabyte export). In the recorded execution: **57 files, 125 occurrences**; 54 of the files in the runtime `window.<Namespace>` form. Expect these categories:
+
+| Category | Form | Notes |
+|---|---|---|
+| Screen sources | `const NS = window.<Namespace>;` then an unguarded destructure | Compiled into the bundle **and** loaded raw via `text/babel` — both copies must change |
+| Shared helper script | `window.<Namespace> || {}` soft fallbacks | Soft fallbacks are silent failures by design; the guard makes them unreachable |
+| Card pages (`*.card.html`) | inline `text/babel` binding the global | Do **not** load the helper; need their own guard |
+| Canvas template | `component-from-global-scope="<Namespace>.<Component>"` attributes | Attribute form, not `window.` |
+| `_ds_manifest.json` | `"namespace": "<Namespace>"` | |
+| `_ds_bundle.js` header | `"namespace"` inside the `@ds-bundle` JSON | line 1 |
+| `_ds_bundle.js` IIFE | the `window.X = window.X \|\| {}` line | 2 occurrences on one line |
+| `_ds_bundle.js` body | every compiled per-file block that binds it | in the recorded case 56 — exactly the sum of the sources' counts |
+| Docs | a readme line | harmless, rewrite for consistency |
+
+The bundle body is **not** minified: one block per source file — a `// <path>` marker, then `try { (() => { <compiled source> })() } catch …`. Compiled blocks preserve identifier literals but normalise formatting (e.g. a space after commas), so edits inside the bundle must target exact compiled strings confirmed by grep, not copies of source lines.
+
+Make the tool print the counts and the per-file table; never hardcode them. Assert that the bundle's count equals header + IIFE + the per-source sum — that equality is a cheap proof you have found everything.
+
+## `sourceHashes`
+
+The bundle header carries `sourceHashes: { "<path>": "<12 hex>" }` for every compiled source. Verified scheme: **`sha256(file bytes)[:12]`** — check it on several files, ideally all, because a validator that reads the header will compare against the files at the destination.
+
+After rewriting sources, **recompute every entry whose file changed** and re-serialise the header byte-identically (compact JSON separators, key order preserved — assert the untouched header round-trips before you trust your serialiser). Two reasons:
+
+1. Skipping it manufactures exactly the staleness signal — header says X, file hashes Y — that a validator would treat as "recompile needed", which is the path you are trying to keep control of.
+2. Re-verifying **all** entries before push catches the case where the scheme differs for files outside your sample.
+
+Dead files named in `sourceHashes` are a decision, not an oversight: if they are absent at the destination, a validator sees missing sources and may recompile. Either push them (they are inert) or strip them from header **and** body deliberately. See `reconnaissance.md`.
+
+## The guard
+
+Reference implementation: `scripts/namespace_guard.js`. Behaviour:
+
+1. Check the vendor globals the page loads before the bundle (`React`, `ReactDOM`, `Babel` — drop `Babel` if screens are precompiled).
+2. Check `window.<EXPECTED>` exists, is an object, and exposes a known component as a function (an *anchor* — pick the root layout component).
+3. On failure, **paint first, then throw**: a fixed, high-z-index `<pre role="alert">` naming
+   - the expected global, and whether it is absent or present-but-malformed (with its keys and the bundle's own `__errors` count if it keeps one);
+   - **every namespace-shaped global actually present** (`/^[A-Z][A-Za-z0-9]*_[0-9a-f]{6}$/`) — this is how a platform-minted value surfaces verbatim on screen;
+   - which vendor global is missing, if any ("script path or SRI failure; check the network panel").
+   Then `throw new Error(sameMessage)`.
+4. **Never bind a candidate.** Shape-matching (`Object.values(window).find(v => v && v.Shell)`) was proposed and rejected: with a partial object or two candidates it binds the wrong one silently.
+
+Overlay first, then throw, so neither "blank screen" nor "clean console" can occur.
+
+### Placement
+
+| Where | Why |
+|---|---|
+| Top of the shared helper script (loaded after `_ds_bundle.js`, before any screen) | Covers every bundle-loading page without editing them |
+| Inline `<script>` right after the bundle tag in each card page | Card pages do not load the helper |
+| `s.onload` of the dynamically appended bundle script in the canvas template's base loader | Namespace check only — the canvas loads React/Babel asynchronously, so a vendor check there would false-positive |
+
+Six copies in the recorded case. The expected value is the *new* literal, so a future retarget's rewrite covers the guards too.
+
+### Negative tests, before pushing
+
+On a throwaway commit, set `EXPECTED` to a wrong value → the overlay must name it and list the real global under "present". On a second throwaway commit, break one vendor path → the network panel must show the 404 and the overlay must name the missing global. Then `git reset --hard <named commit>` and **prove the revert by grep** (wrong value in 0 files, correct line count 1, `git diff <commit> --stat` empty), not by asserting it.
+
+## Recompile branches
+
+| App behaviour after push | Effective global | Pages reference | Outcome |
+|---|---|---|---|
+| Leaves the pushed bundle alone (hashes consistent) | your value | your value | Works. **The prediction is not load-bearing** — you set the namespace yourself. |
+| Recompiles and mints the predicted value | predicted | same | Works; your bundle replaced by an equivalent. Rule confirmed. |
+| Recompiles and mints something else (creation-time name, unexpected suffix rule) | X | predicted | Guard fires on every page: overlay names the expected global and lists X under "present". `get_file _ds_manifest.json` shows X without opening a page. Fix = re-run the rewrite with X, re-push only the changed paths. One iteration. |
+| Bundle write rejected and no recompile produced one | none | — | Bundle `<script>` 404s; guard fires with "not defined after `_ds_bundle.js`". Same overlay, same diagnosis. |
+
+Every branch ends in either a working page or a named error. That is what makes pushing with the compile-time/creation-time question open acceptable.
+
+## The tautology trap
+
+Reading the manifest back immediately after the push and seeing your namespace proves the artifact landed intact and self-consistent — it is your file. It does **not** test the derivation rule. The rule is tested only by a recompile, and the likeliest trigger is opening the Design System pane. Read the manifest before opening; read it again after.
+
+## Do not rename the destination yet
+
+Renaming the project is the one action most likely to mint a new stem. Rename only after you know whether the platform recompiles at all and whether the stem follows the current name; then a rename is a known procedure — one rewrite iteration with the new value.
