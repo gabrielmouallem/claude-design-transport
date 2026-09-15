@@ -1,3 +1,5 @@
+![claude-design-transport: Move your design system. Keep it editable.](assets/readme-banner.png)
+
 # claude-design-transport
 
 **Move a Claude Design project or design system from one account or project to another, with fidelity, by using the DesignSync write API instead of file uploads.**
