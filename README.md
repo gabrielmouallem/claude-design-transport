@@ -30,7 +30,17 @@ Each of these stands on its own:
 
 ## Install
 
-Copy this directory to `~/.claude/skills/claude-design-transport/` (available in every project) or to `<your-repo>/.claude/skills/claude-design-transport/` (one project). Claude Code discovers `SKILL.md` through its frontmatter; the trigger phrases are listed there.
+The repository root **is** the skill directory (`SKILL.md`, `references/`, `scripts/` at top level), so installing is a single clone and updating is `git pull`:
+
+```sh
+# every project on this machine (user scope)
+git clone https://github.com/gabrielmouallem/claude-design-transport.git ~/.claude/skills/claude-design-transport
+
+# one project only (project scope; commit the directory or add it as a submodule)
+git clone https://github.com/gabrielmouallem/claude-design-transport.git .claude/skills/claude-design-transport
+```
+
+If you run Claude Code with a custom `CLAUDE_CONFIG_DIR` (see `references/account-routing.md`), clone into `$CLAUDE_CONFIG_DIR/skills/claude-design-transport` instead. Claude Code discovers the skill from `SKILL.md`'s frontmatter at the start of the next session; verify by typing `/claude-design-transport` or asking "what is in this design export?".
 
 Scripts need Python 3.9+ (standard library only) and Node ≥ 22 (`node --check`, and the global `WebSocket` used by the headless-Chrome verification pattern). Writing to a Claude Design project needs design-system authorization in Claude Code: run `/design-login`. It is a separate channel from the session's own login.
 
