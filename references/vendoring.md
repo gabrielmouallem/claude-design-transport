@@ -62,6 +62,10 @@ The bundle's compiled loader injects `<link>` tags for the icon CSS only if no e
 
 Google-served CSS declares one `@font-face` per (weight × unicode-range subset), all pointing at the same variable-font file for a given subset. Reproduce that exactly (66 rules in the recorded case) rather than collapsing to weight ranges — zero behavioural change, and the browser fetches only the subsets it uses.
 
+## The platform recognises vendored fonts
+
+After the first open of the destination's pane, the regenerated manifest listed every local `@font-face` rule under `fonts` (70 entries in the recorded case, each with `cssPath` and the `files` under `assets/fonts/`) and resolved the brand typefaces through the generated stylesheet in `brandFonts`; the icon weights appeared with `status: "unreferenced"`, which is correct — they are used by CSS class, not by token. Vendoring is therefore platform-legible, not a hack the app tolerates. (Observed 2026-09-15.)
+
 ## Known residuals
 
 - **Canvas template loaders** (`templates/…/support.js`) may want *production* builds of React/ReactDOM with their own SRI constants, which a development-build export does not contain. They also have a `window.__resources` substitution hook. Decide after observing the pane; a one-time canonical fetch verified against those SRI constants is the clean fix.

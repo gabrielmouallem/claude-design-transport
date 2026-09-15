@@ -40,7 +40,7 @@ A design-system project is `type: PROJECT_TYPE_DESIGN_SYSTEM`, fixed at creation
 
 ## The tautology trap
 
-The manifest you read back in step 6 is *your* file if the platform has not touched it — byte-compare it to what you pushed (it was identical, 56,449 bytes, same sha256, in the recorded case). That confirms the artifact is intact and self-consistent. **It does not test the namespace derivation rule.** Only a recompile does. Read again after the first open (`namespace.md`, "Recompile branches").
+The manifest you read back in step 6 is *your* file if the platform has not touched it — byte-compare it to what you pushed (it was identical, 56,449 bytes, same sha256, in the recorded case). That confirms the artifact is intact and self-consistent. **It does not test the namespace derivation rule.** Only a recompile does. Read again after the first open (`namespace.md`, "Recompile branches"). Observed 2026-09-15: opening the pane once **did** trigger the self-check — the manifest came back regenerated, `globalCssPaths` expanded to every sheet `styles.css` imports, `fonts` populated from the local `@font-face` rules, `brandFonts` extended — with the namespace unchanged. The before/after diff is the evidence that anything ran.
 
 ## Deletes, if you ever must
 
